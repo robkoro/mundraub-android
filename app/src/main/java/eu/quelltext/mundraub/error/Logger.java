@@ -6,6 +6,7 @@ import android.os.Environment;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.Scanner;
@@ -23,8 +24,10 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
     private static final int TAG_MAX_LEGTH = 23; // from https://stackoverflow.com/a/28168739/1320237
     private static final String TAG_DIVIDER = ": ";
     private static Logger logger; // initialize as soon as possible;
+    private static final String PACKAGE_PATH = "/data/eu.quelltext.mundraub"; // package path
     private static final String LOG_FILE_NAME = "eu.quelltext.mundraub.log.txt";
     private static final String ERROR_FILE_NAME = "eu.quelltext.mundraub.error.txt";
+    private static File logFile;
     private static Activity activity;
     private final UncaughtExceptionHandler defaultExceptionHandler;
     private final PrintStream logStream;
@@ -45,25 +48,51 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
     private Logger() {
         defaultExceptionHandler = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler(this);
+        File outputFile = getLogFile();
         PrintStream log1;
         try {
-            log1 = new PrintStream(new FileOutputStream(getLogFile(), false));
+            log1 = new PrintStream(new FileOutputStream(outputFile, false));
             System.setOut(log1);
             System.setErr(log1);
         } catch (FileNotFoundException e) {
+            // this should not happen as we are using internal file when external is not accessed
             printStackTrace(TAG, e);
             d(TAG, "A FileNotFoundException usually happens when the user did not give permission to log the output to EXTERNAL_STORAGE. Nothing to worry about.");
             log1 = null;
         }
+
         logStream = log1;
         Initialization.provideActivityFor(this);
         i(TAG, "-------------- App started --------------");
     }
 
     private final static File getLogFile() {
+        // Create logfile only once -> on start of application
+        if (logFile != null)
+            return logFile;
+
         // from https://stackoverflow.com/questions/7887078/android-saving-file-to-external-storage#7887114
         String root = Environment.getExternalStorageDirectory().toString();
-        return new File(root, LOG_FILE_NAME);
+
+        File outputFile = new File(root, LOG_FILE_NAME);
+        if (!outputFile.exists() || !outputFile.canWrite()) {
+            // we should use file from internal storage
+            // we delete it on every start and transmitting error report, so it is safe to leak
+            String path = Environment.getDataDirectory().getAbsolutePath(); // this get us to "/data" directory
+            path += PACKAGE_PATH; // append package path
+            outputFile = new File(path, LOG_FILE_NAME);
+            // delete existing file and create new because we need clear content and prevent leaks
+            if (outputFile.exists())
+                outputFile.delete();
+
+            try {
+                outputFile.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        logFile = outputFile;
+        return outputFile;
     }
 
     @Override
@@ -118,6 +147,7 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
             new Dialog(activity).askYesNo(message, R.string.ask_error_report_is_needed, new Dialog.YesNoCallback() {
                 @Override
                 public void yes() {
+                    getErrorReport().delete();
                 }
                 @Override
                 public void no() {
@@ -218,7 +248,7 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
         while (scanner.hasNextLine()) {
             String line = scanner.nextLine();
             logStream.print(tag);
-            logStream.print(line);
+            logStream.print(line + "\n");
             tag = spaces;
         }
         scanner.close();
