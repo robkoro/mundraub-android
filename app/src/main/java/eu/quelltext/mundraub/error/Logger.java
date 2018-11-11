@@ -1,7 +1,6 @@
 package eu.quelltext.mundraub.error;
 
 import android.app.Activity;
-import android.os.Environment;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -24,7 +23,6 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
     private static final int TAG_MAX_LEGTH = 23; // from https://stackoverflow.com/a/28168739/1320237
     private static final String TAG_DIVIDER = ": ";
     private static Logger logger; // initialize as soon as possible;
-    private static final String PACKAGE_PATH = "/data/eu.quelltext.mundraub"; // package path
     private static final String LOG_FILE_NAME = "eu.quelltext.mundraub.log.txt";
     private static final String ERROR_FILE_NAME = "eu.quelltext.mundraub.error.txt";
     private static File logFile;
@@ -71,25 +69,18 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
         if (logFile != null)
             return logFile;
 
-        // from https://stackoverflow.com/questions/7887078/android-saving-file-to-external-storage#7887114
-        String root = Environment.getExternalStorageDirectory().toString();
+        // File would be placed in cache since it is deleted once report is sent
+        String root = Initialization.getActivity().getCacheDir().toString();
 
+        // try create new file
         File outputFile = new File(root, LOG_FILE_NAME);
-        if (!outputFile.exists() || !outputFile.canWrite()) {
-            // we should use file from internal storage
-            // we delete it on every start and transmitting error report, so it is safe to leak
-            String path = Environment.getDataDirectory().getAbsolutePath(); // this get us to "/data" directory
-            path += PACKAGE_PATH; // append package path
-            outputFile = new File(path, LOG_FILE_NAME);
-            // delete existing file and create new because we need clear content and prevent leaks
-            if (outputFile.exists())
-                outputFile.delete();
+        if(outputFile.exists())
+            outputFile.delete();
 
-            try {
-                outputFile.createNewFile();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        try {
+            outputFile.createNewFile();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
         logFile = outputFile;
         return outputFile;
@@ -147,7 +138,6 @@ public class Logger implements UncaughtExceptionHandler, Initialization.Activity
             new Dialog(activity).askYesNo(message, R.string.ask_error_report_is_needed, new Dialog.YesNoCallback() {
                 @Override
                 public void yes() {
-                    getErrorReport().delete();
                 }
                 @Override
                 public void no() {
